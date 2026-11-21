@@ -174,6 +174,17 @@
     "others) and advertises only WEB_AUTH_ENDPOINT (SEP-10), no transfer or SEP-31 server.",
     "Probe: toml_fetch and sep10_auth pass.",
     "",
+    "kbtrading.org is KB Trading (KB Trading Ltd, Road Town, Tortola, British Virgin Islands;",
+    "https://kbtrading.org/.well-known/stellar.toml). Probed 2026-11-25: toml_fetch passes",
+    "(sha256 ab43d86d883dd3c0e85bf0a0df7ab58dcc7ff05a44f818bc825a89c5f5d96e5f), advertises",
+    "SEP-1, SEP-6, SEP-10, SEP-12, SEP-24, SEP-31. sep10_auth passes (JWT issued),",
+    "sep31_info receives CLPX (min 14000, max 8500000), sep6_info withdraws BTCLN,",
+    "sep6_auth returns HTTP 403, sep12_status returns HTTP 400. No European corridor or",
+    "country evidence is verified (BVI is not in Europe; assets are non-European or XCHF",
+    "test asset without European corridor proof), so `countries` is empty per repository",
+    "convention (never infer `countries` from assets). It is recorded as a non-European",
+    "SEP-31 anchor for issue #667. No corridor manifest is written.",
+    "",
     "Each entry in `anchors` records curator-declared context (name, ISO 3166-1",
     "alpha-2 countries, kind, directory/manifest source, and date added). Countries",
     "and `kind` are curator-declared metadata, NOT attested facts; `domains` mirrors",
@@ -206,7 +217,8 @@
     "fchain.io",
     "ntokens.com",
     "pubnet-sep.latamex.com",
-    "etherfuse.com"
+    "etherfuse.com",
+    "kbtrading.org"
   ],
   "anchors": [
     {
@@ -424,6 +436,14 @@
       "kind": "other",
       "source": "https://anchors.stellar.org/?search=Etherfuse",
       "added": "2026-11-24"
+    },
+    {
+      "domain": "kbtrading.org",
+      "name": "KB Trading",
+      "countries": [],
+      "kind": "other",
+      "source": "https://kbtrading.org/.well-known/stellar.toml",
+      "added": "2026-11-25"
     }
   ]
 }

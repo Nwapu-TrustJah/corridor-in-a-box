@@ -68,15 +68,15 @@ The `Registry` requires `attester: Address` in its constructor, while the `Attes
 
 ### Cost Model (Mainnet)
 
-- **Fleet Size**: 24 anchors in `contracts/anchors.json` (as of 2026-11-20; it grows as anchors are added).
+- **Fleet Size**: 28 anchors in `contracts/anchors.json` (as of 2026-11-25; it grows as anchors are added).
 - **Frequency**: 1 attestation per anchor per day.
 - **Per-Transaction Cost**: ~0.05 to 0.10 XLM (covering base fee, CPU/memory instructions, and persistent entry write footprint).
-- **Daily Spend**: ~1.2 to 2.4 XLM (24 attestations at the per-transaction cost).
-- **Monthly Run Rate**: ~36 to 72 XLM per month (plus periodic storage rent extensions).
+- **Daily Spend**: ~1.4 to 2.8 XLM (28 attestations at the per-transaction cost).
+- **Monthly Run Rate**: ~42 to 84 XLM per month (plus periodic storage rent extensions).
 
 ### Treasury & Operational Account
 
-- A dedicated attestation distribution account (`G...`) will be funded with **250 XLM** (roughly 3.5 to 7 months of operations at the rate above).
+- A dedicated attestation distribution account (`G...`) will be funded with **250 XLM** (roughly 3 to 6 months of operations at the rate above).
 - Automated alerting triggers when balance falls below **50 XLM**.
 - Funded and sponsored by the ecosystem operations grant.
 

@@ -49,6 +49,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
   fetched and probed with `pnpm probe:anchor` on 2026-11-25 and a source. Amero Exchange and
   Ripio were left out: neither serves a stellar.toml.
 
+### Added — KB Trading anchor for Europe fleet ([#667](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/667))
+
+- `kbtrading.org` (KB Trading, Road Town, Tortola, British Virgin Islands) in
+  `contracts/anchors.json`, probed 2026-11-25 with `pnpm probe:anchor kbtrading.org`.
+  Toml fetch passes (sha256 ab43d86d883dd3c0e85bf0a0df7ab58dcc7ff05a44f818bc825a89c5f5d96e5f),
+  advertises SEP-1, SEP-6, SEP-10, SEP-12, SEP-24, SEP-31. sep10_auth passes (JWT issued),
+  sep31_info receives CLPX (min 14000, max 8500000), sep6_info withdraws BTCLN, sep6_auth
+  returns HTTP 403, sep12_status returns HTTP 400. No European corridor or country evidence
+  is verified (BVI is not in Europe; assets are non-European or XCHF test asset without
+  European corridor proof), so `countries` is empty per repository convention (never infer
+  `countries` from assets). It is recorded as a non-European SEP-31 anchor. No corridor
+  manifest is written.
+
 ### Added — Dashboard filters for SEP, asset and country ([#668](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/668))
 
 - The attested-anchor list on each network can be filtered by SEP (advertised, or SEP-31
