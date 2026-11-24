@@ -16,6 +16,7 @@ import {
   classifyTomlFetchError,
   decodeProbes,
   decodeSeps,
+  extractHttpStatusFromMessage,
   formatProbeResultJson,
   isSafeUrl,
   parseProbeArgs,
@@ -603,10 +604,25 @@ describe("classifyTomlFetchError (#662)", () => {
 
     it("classifies HTTP <status> in error message", () => {
       expect(classifyTomlFetchError(new Error("HTTP 403"))).toBe("http_403");
+      expect(classifyTomlFetchError(new Error("HTTP 404"))).toBe("http_404");
       expect(classifyTomlFetchError(new Error("Request failed with HTTP 503"))).toBe(
         "http_503",
       );
       expect(classifyTomlFetchError(new Error("status: 400 Bad Request"))).toBe("http_400");
+      expect(classifyTomlFetchError(new Error("status: 500"))).toBe("http_500");
+      expect(classifyTomlFetchError(new Error("status=503"))).toBe("http_503");
+      expect(classifyTomlFetchError(new Error("status 429"))).toBe("http_429");
+      expect(classifyTomlFetchError(new Error("status   :   502"))).toBe("http_502");
+    });
+
+    it("extracts status code and resists ReDoS on repeated whitespace", () => {
+      expect(extractHttpStatusFromMessage("HTTP 404")).toBe(404);
+      expect(extractHttpStatusFromMessage("status: 500")).toBe(500);
+      expect(extractHttpStatusFromMessage("status=503")).toBe(503);
+      expect(extractHttpStatusFromMessage("status 429")).toBe(429);
+      expect(extractHttpStatusFromMessage("status" + " ".repeat(10000) + ": 500")).toBe(500);
+      expect(extractHttpStatusFromMessage("status" + " ".repeat(10000))).toBeUndefined();
+      expect(extractHttpStatusFromMessage("HTTP" + " ".repeat(10000) + "404")).toBe(404);
     });
   });
 
@@ -668,6 +684,44 @@ describe("classifyTomlFetchError (#662)", () => {
 
     it("classifies DNS keywords in message", () => {
       expect(classifyTomlFetchError(new Error("getaddrinfo ENOTFOUND bad.host"))).toBe("dns");
+      expect(classifyTomlFetchError(new Error("DNS lookup failed: host not found"))).toBe(
+        "dns",
+      );
+    });
+
+    it("does not classify post-DNS socket/transport errors like ECONNREFUSED as dns or parse", () => {
+      const err = new Error("connect ECONNREFUSED 127.0.0.1:443");
+      expect(classifyTomlFetchError(err)).toBeUndefined();
+      expect(classifyTomlFetchError(err)).not.toBe("parse");
+      expect(classifyTomlFetchError(err)).not.toBe("dns");
+
+      const errWithCause = new TypeError("fetch failed");
+      errWithCause.cause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:443"), {
+        code: "ECONNREFUSED",
+      });
+      expect(classifyTomlFetchError(errWithCause)).toBeUndefined();
+      expect(classifyTomlFetchError(errWithCause)).not.toBe("parse");
+      expect(classifyTomlFetchError(errWithCause)).not.toBe("dns");
+
+      const errWithCode = Object.assign(new Error("connection refused"), {
+        code: "ECONNREFUSED",
+      });
+      expect(classifyTomlFetchError(errWithCode)).toBeUndefined();
+      expect(classifyTomlFetchError(errWithCode)).not.toBe("parse");
+      expect(classifyTomlFetchError(errWithCode)).not.toBe("dns");
+
+      for (const code of [
+        "ECONNRESET",
+        "EHOSTUNREACH",
+        "ENETUNREACH",
+        "ECONNABORTED",
+        "EPIPE",
+      ]) {
+        const netErr = Object.assign(new Error("network failure"), { code });
+        expect(classifyTomlFetchError(netErr)).toBeUndefined();
+        expect(classifyTomlFetchError(netErr)).not.toBe("parse");
+        expect(classifyTomlFetchError(netErr)).not.toBe("dns");
+      }
     });
   });
 
@@ -716,11 +770,11 @@ describe("classifyTomlFetchError (#662)", () => {
       );
     });
 
-    it("classifies generic errors as parse fallback", () => {
-      expect(classifyTomlFetchError(new Error("Unknown error"))).toBe("parse");
-      expect(classifyTomlFetchError("Unknown error string")).toBe("parse");
-      expect(classifyTomlFetchError(12345)).toBe("parse");
-      expect(classifyTomlFetchError({ random: true })).toBe("parse");
+    it("does not classify unknown errors as parse", () => {
+      expect(classifyTomlFetchError(new Error("Unknown error"))).toBeUndefined();
+      expect(classifyTomlFetchError("Unknown error string")).toBeUndefined();
+      expect(classifyTomlFetchError(12345)).toBeUndefined();
+      expect(classifyTomlFetchError({ random: true })).toBeUndefined();
     });
   });
 });
@@ -732,6 +786,53 @@ describe("validateToml (#662)", () => {
 
   it("passes minimal valid toml", () => {
     expect(() => validateToml('VERSION = "2.0.0"\n')).not.toThrow();
+  });
+
+  it("passes empty or whitespace-only toml documents", () => {
+    expect(() => validateToml("")).not.toThrow();
+    expect(() => validateToml("   \n  \t  \r\n")).not.toThrow();
+    expect(() => validateToml("# only comments\n\n# another comment")).not.toThrow();
+  });
+
+  it("passes valid toml with UTF-8 BOM and CRLF line endings", () => {
+    expect(() => validateToml('\uFEFFVERSION = "2.0.0"\r\n')).not.toThrow();
+    expect(() =>
+      validateToml('VERSION = "2.0.0"\r\n[DOCUMENTATION]\r\nORG_NAME = "Test"\r\n'),
+    ).not.toThrow();
+  });
+
+  it("passes valid toml with inline tables and empty arrays", () => {
+    const toml = `
+VERSION = "2.0.0"
+MAP = { code = "USD", issuer = "G123" }
+EMPTY_TABLE = {}
+EMPTY_ARRAY = []
+`;
+    expect(() => validateToml(toml)).not.toThrow();
+  });
+
+  it("passes valid [[CURRENCIES]] without optional fields", () => {
+    const toml = `
+[[CURRENCIES]]
+code = "XLM"
+
+[[CURRENCIES]]
+code = "USD"
+issuer = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+`;
+    expect(() => validateToml(toml)).not.toThrow();
+  });
+
+  it("allows URLs with #fragment, escaped quotes, single-quoted literals, and dotted keys", () => {
+    const toml = `
+VERSION = "2.0.0"
+URL = "https://example.com/api/v1#section-auth"
+ESCAPED = "hello \\"nested quote\\" inside"
+LITERAL_URL = 'https://example.com/path#frag'
+DOCUMENTATION.ORG_NAME = "Test Org"
+DOCUMENTATION.ORG_URL = "https://example.com"
+`;
+    expect(() => validateToml(toml)).not.toThrow();
   });
 
   it("allows valid multi-line arrays", () => {
@@ -819,10 +920,6 @@ ACCOUNTS = [
 ]]
 `;
     expect(() => validateToml(toml)).toThrowError(/unmatched closing bracket/);
-  });
-
-  it("throws SyntaxError on empty toml content", () => {
-    expect(() => validateToml("   \n  \t  ")).toThrowError(SyntaxError);
   });
 
   it("throws SyntaxError on HTML response", () => {

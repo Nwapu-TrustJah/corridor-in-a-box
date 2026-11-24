@@ -268,7 +268,7 @@ export async function sweepAnchors(
           probesPassed: 0,
           tomlHash: ZERO_HASH,
           outcomes: [{ probe: "toml_fetch", passed: false, detail }],
-          tomlFailureReason,
+          ...(tomlFailureReason ? { tomlFailureReason } : {}),
         };
       }
       results[idx] = res;

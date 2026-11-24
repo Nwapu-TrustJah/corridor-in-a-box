@@ -70,13 +70,7 @@ export function AnchorCard({ anchor }: { anchor: AnchorAttestation }) {
                 ) : (
                   <CircleSlash size={12} className="shrink-0 text-red-600" />
                 )}
-                {!ran
-                  ? "not probed"
-                  : passed
-                    ? "passed"
-                    : probe === "toml_fetch" && anchor.tomlFailureReason
-                      ? `failed (${anchor.tomlFailureReason})`
-                      : "failed"}
+                {!ran ? "not probed" : passed ? "passed" : "failed"}
               </dd>
             </div>
           );

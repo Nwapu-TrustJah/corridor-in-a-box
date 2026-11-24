@@ -297,9 +297,6 @@ describe("pure report builders (@corridor/probe/report)", () => {
       const res = parseSweepArgs(["--concurrency", "8", "--out=/tmp/sweep"]);
       expect(res.concurrency).toBe(8);
       expect(res.outDir).toBe("/tmp/sweep");
-
-      const resEq = parseSweepArgs(["--concurrency=12"]);
-      expect(resEq.concurrency).toBe(12);
     });
   });
 

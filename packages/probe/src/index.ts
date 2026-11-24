@@ -144,19 +144,29 @@ export function tomlValue(toml: string, key: string): string | undefined {
 /**
  * Basic syntax validation of a fetched stellar.toml.
  * Ensures the response is not HTML/XML or malformed content, while cleanly
- * allowing valid TOML tables, array-of-tables, multi-line arrays, and comments.
+ * allowing valid TOML tables, array-of-tables, multi-line arrays, comments,
+ * and empty/minimal documents.
  */
 export function validateToml(content: string): void {
-  const trimmed = content.trim();
-  if (trimmed.length === 0) {
-    throw new SyntaxError("stellar.toml is empty");
+  let toValidate = content;
+  // Strip UTF-8 BOM if present
+  if (toValidate.startsWith("\uFEFF")) {
+    toValidate = toValidate.slice(1);
   }
+
+  const trimmed = toValidate.trim();
+  // An empty or whitespace-only document is valid TOML per spec
+  if (trimmed.length === 0) {
+    return;
+  }
+
   // Reject HTML/XML documents returned with 200 OK (e.g. landing or error pages)
   if (trimmed.startsWith("<") || /^\s*<!doctype\s+html/i.test(trimmed)) {
     throw new SyntaxError("stellar.toml response is HTML/XML, not TOML");
   }
 
-  const lines = content.split("\n");
+  // Normalize CRLF to LF
+  const lines = toValidate.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   let inMultiLineString: string | null = null;
   let bracketDepth = 0;
 
@@ -302,10 +312,118 @@ export function validateToml(content: string): void {
 }
 
 /**
+ * Extracts a 3-digit HTTP status code (100-599) from an error message in linear time
+ * without backtracking regular expressions to eliminate ReDoS risk on untrusted input.
+ * Matches patterns like "HTTP 404", "status: 500", "status=503", "status 429".
+ */
+export function extractHttpStatusFromMessage(message: string): number | undefined {
+  if (!message || typeof message !== "string") return undefined;
+
+  const lower = message.toLowerCase();
+  const len = lower.length;
+
+  let idx = 0;
+  while (idx < len) {
+    const httpIdx = lower.indexOf("http", idx);
+    const statusIdx = lower.indexOf("status", idx);
+
+    if (httpIdx === -1 && statusIdx === -1) {
+      break;
+    }
+
+    const isHttp = httpIdx !== -1 && (statusIdx === -1 || httpIdx <= statusIdx);
+    const matchPrefixLen = isHttp ? 4 : 6;
+    const pos = isHttp ? httpIdx : statusIdx;
+    idx = pos + matchPrefixLen;
+
+    // Must be word boundary before prefix
+    if (pos > 0) {
+      const prevChar = lower.charCodeAt(pos - 1);
+      if ((prevChar >= 97 && prevChar <= 122) || (prevChar >= 48 && prevChar <= 57)) {
+        continue;
+      }
+    }
+
+    let cur = pos + matchPrefixLen;
+
+    // After "status", skip optional whitespace, optional ':' or '=', and optional whitespace.
+    // After "http", require at least one whitespace character.
+    if (matchPrefixLen === 4) {
+      if (
+        cur >= len ||
+        (lower[cur] !== " " &&
+          lower[cur] !== "\t" &&
+          lower[cur] !== "\n" &&
+          lower[cur] !== "\r")
+      ) {
+        continue;
+      }
+      while (
+        cur < len &&
+        (lower[cur] === " " ||
+          lower[cur] === "\t" ||
+          lower[cur] === "\n" ||
+          lower[cur] === "\r")
+      ) {
+        cur++;
+      }
+    } else {
+      while (
+        cur < len &&
+        (lower[cur] === " " ||
+          lower[cur] === "\t" ||
+          lower[cur] === "\n" ||
+          lower[cur] === "\r")
+      ) {
+        cur++;
+      }
+      if (cur < len && (lower[cur] === ":" || lower[cur] === "=")) {
+        cur++;
+        while (
+          cur < len &&
+          (lower[cur] === " " ||
+            lower[cur] === "\t" ||
+            lower[cur] === "\n" ||
+            lower[cur] === "\r")
+        ) {
+          cur++;
+        }
+      }
+    }
+
+    // Check for exactly 3 digits
+    if (cur + 3 <= len) {
+      const d1 = lower.charCodeAt(cur);
+      const d2 = lower.charCodeAt(cur + 1);
+      const d3 = lower.charCodeAt(cur + 2);
+
+      if (d1 >= 48 && d1 <= 57 && d2 >= 48 && d2 <= 57 && d3 >= 48 && d3 <= 57) {
+        // Must have word boundary after digits (not a 4th digit or letter)
+        const nextChar = cur + 3 < len ? lower.charCodeAt(cur + 3) : 32;
+        const isWordChar =
+          (nextChar >= 48 && nextChar <= 57) || (nextChar >= 97 && nextChar <= 122);
+        if (!isWordChar) {
+          const code = (d1 - 48) * 100 + (d2 - 48) * 10 + (d3 - 48);
+          if (code >= 100 && code <= 599) {
+            return code;
+          }
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Classifies a stellar.toml fetch failure into one of five categories:
  * dns, timeout, http_<status>, tls, or parse.
+ * Returns undefined for unrecognized non-parse errors.
  */
-export function classifyTomlFetchError(err: unknown, status?: number): TomlFailureReason {
+export function classifyTomlFetchError(
+  err: unknown,
+  status?: number,
+): TomlFailureReason | undefined {
   // 1. Explicit status passed in, or status property on error object
   if (typeof status === "number" && (status < 200 || status >= 300)) {
     return `http_${status}`;
@@ -340,11 +458,9 @@ export function classifyTomlFetchError(err: unknown, status?: number): TomlFailu
   const name = e.name || (cause?.name as string | undefined) || "";
 
   // 2. HTTP status code in error message (e.g. "HTTP 403", "HTTP 404", "status 502")
-  const httpMatch =
-    e.message.match(/\bHTTP\s+(\d{3})\b/i) || e.message.match(/\bstatus\s*[:=]?\s*(\d{3})\b/i);
-  if (httpMatch) {
-    const codeNum = parseInt(httpMatch[1], 10);
-    return `http_${codeNum}`;
+  const extractedStatus = extractHttpStatusFromMessage(e.message);
+  if (extractedStatus !== undefined) {
+    return `http_${extractedStatus}`;
   }
 
   // 3. Timeout: AbortError, TimeoutError, connect/header timeouts, ETIMEDOUT
@@ -364,17 +480,20 @@ export function classifyTomlFetchError(err: unknown, status?: number): TomlFailu
     return "timeout";
   }
 
-  // 4. DNS: ENOTFOUND, EAI_AGAIN, EAI_NONAME, ENODATA, EAI_FAIL, getaddrinfo
+  // 4. DNS: ENOTFOUND, EAI_AGAIN, EAI_NONAME, ENODATA, EAI_FAIL, ESERVFAIL, getaddrinfo
   if (
     code === "ENOTFOUND" ||
     code === "EAI_AGAIN" ||
     code === "EAI_NONAME" ||
     code === "ENODATA" ||
     code === "EAI_FAIL" ||
+    code === "ESERVFAIL" ||
     msg.includes("enotfound") ||
     msg.includes("getaddrinfo") ||
+    msg.includes("dns lookup") ||
     causeMsg.includes("enotfound") ||
-    causeMsg.includes("getaddrinfo")
+    causeMsg.includes("getaddrinfo") ||
+    causeMsg.includes("dns lookup")
   ) {
     return "dns";
   }
@@ -399,7 +518,7 @@ export function classifyTomlFetchError(err: unknown, status?: number): TomlFailu
     return "tls";
   }
 
-  // 6. Parse / Syntax: SyntaxError, TOML parse errors, invalid syntax
+  // 6. Parse / Syntax: SyntaxError, TOML parse errors, invalid syntax, HTML/XML response
   if (
     e instanceof SyntaxError ||
     name === "SyntaxError" ||
@@ -409,13 +528,18 @@ export function classifyTomlFetchError(err: unknown, status?: number): TomlFailu
     msg.includes("syntax") ||
     msg.includes("malformed") ||
     msg.includes("invalid toml") ||
+    msg.includes("html/xml") ||
     causeMsg.includes("parse") ||
-    causeMsg.includes("syntax")
+    causeMsg.includes("syntax") ||
+    causeMsg.includes("malformed") ||
+    causeMsg.includes("invalid toml") ||
+    causeMsg.includes("html/xml")
   ) {
     return "parse";
   }
 
-  return "parse";
+  // Unknown non-parse errors are not classified as parse
+  return undefined;
 }
 
 export async function probeAnchor(
@@ -464,7 +588,15 @@ export async function probeAnchor(
     record("toml_fetch", false, why(e));
     // No toml means nothing else can be discovered. Returning here keeps
     // probesRun honest: we did not attempt what we could not reach.
-    return { domain, seps, probesRun, probesPassed, tomlHash, outcomes, tomlFailureReason };
+    return {
+      domain,
+      seps,
+      probesRun,
+      probesPassed,
+      tomlHash,
+      outcomes,
+      ...(tomlFailureReason ? { tomlFailureReason } : {}),
+    };
   }
 
   const endpoint = new Map<SepNumber, string>();
