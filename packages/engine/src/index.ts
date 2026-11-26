@@ -57,6 +57,7 @@ export {
   RATE_NETWORKS,
   PostgresRateHistoryStore,
   assertRateSample,
+  isSep38AssetId,
   assertRateDailySummary,
   type RateSeries,
   type RateNetwork,
@@ -68,6 +69,36 @@ export {
   type RateDailySummaryRecord,
   type ListRateDailySummariesFilter,
 } from "./rate-samples-pg";
+export {
+  checkOutlier,
+  flagOutliers,
+  medianRate,
+  DEFAULT_OUTLIER_THRESHOLD_BPS,
+  DEFAULT_OUTLIER_WINDOW,
+  DEFAULT_OUTLIER_MIN_BASELINE,
+  type OutlierPolicy,
+  type OutlierVerdict,
+} from "./rate-outliers";
+export {
+  DEX_TRADE_RESOLUTION_15M,
+  HORIZON_MAX_LIMIT,
+  assertDexPair,
+  buildTradeAggregationsUrl,
+  collectDexTrades,
+  collectDexTradesForPair,
+  defaultHorizonUrl,
+  fetchTradeAggregations,
+  horizonAssetParams,
+  loadDexPairsConfig,
+  parseDexPairsConfig,
+  tradeAggregationsToSamples,
+  type CollectDexTradesOptions,
+  type DexPairConfig,
+  type DexPairResult,
+  type HorizonTradeAggregationRecord,
+  type HorizonTradeAggregationsResponse,
+  type RateSampleSink,
+} from "./rate-collector-dex";
 export {
   UnimplementedSubmitter,
   createMockSubmitter,
@@ -148,3 +179,22 @@ export {
   ExternalQuoteProvider,
 } from "@corridor/adapter-kit";
 export { checkCompatibility } from "./compat";
+export {
+  DEFAULT_SEP38_REFERENCE_AMOUNT,
+  DEFAULT_SEP38_TIMEOUT_MS,
+  DEFAULT_SEP38_MAX_STALENESS_LEDGERS,
+  pollSep38Prices,
+  findSep38Anchors,
+  resolveSep38QuoteServer,
+  stellarAssetsFromInfo,
+  buyAssetsFromPrices,
+  type Sep38AttestationSource,
+  type RateSampleRecorder,
+  type Sep38PollTarget,
+  type PollSep38PricesOptions,
+  type Sep38PairOutcome,
+  type Sep38AnchorOutcome,
+  type Sep38SkippedAnchor,
+  type Sep38PollResult,
+  type Sep38TomlEndpoints,
+} from "./rate-collector-sep38";
